@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Fergetracker — Tjøtta / Forvik</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#0d1b2a;color:#e8edf2;font-family:'Inter',sans-serif;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* header */
+#hdr{background:#0d1b2a;border-bottom:1px solid rgba(255,255,255,0.08);padding:9px 14px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand h1{font-size:14px;font-weight:600;color:#fff}
+.brand p{font-size:10px;color:rgba(255,255,255,0.4);margin-top:1px}
+#badge{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,0.3);text-align:right;line-height:1.6}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;background:#fbbf24}
+.dot.ok{background:#22c55e;animation:pulse 2s ease-in-out infinite}
+.dot.err{background:#ef4444}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* camera bar */
+#cambar{display:flex;background:#080f18;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;height:36px}
+.ctab{flex:1;border:none;background:transparent;color:rgba(255,255,255,0.4);font-family:'Inter',sans-serif;font-size:11px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
+.ctab:hover{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.7)}
+.ctab.on{color:#fff;border-bottom-color:#3882ff;background:rgba(56,130,255,0.07)}
+.ctab.x{flex:0 0 40px;font-size:16px;color:rgba(255,255,255,0.25)}
+
+/* camera panel */
+#campanel{flex-shrink:0;background:#040b12;max-height:0;overflow:hidden;transition:max-height 0.3s ease}
+#campanel.open{max-height:220px}
+.cgrid{display:grid;height:218px}
+.cbox{position:relative;overflow:hidden;background:#050c14}
+.cbox img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 0.4s;display:block}
+.cbox img.ok{opacity:1}
+.clabel{position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,0.75));padding:22px 10px 6px;font-size:10px;color:rgba(255,255,255,0.85);font-weight:500}
+.cbtnrow{position:absolute;top:6px;right:6px;display:flex;gap:4px}
+.cbtn{background:rgba(0,0,0,0.6);border:none;color:rgba(255,255,255,0.6);font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;display:inline-block;line-height:1.4}
+.cbtn:hover{color:#fff}
+.cloading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.2);font-size:11px}
+
+/* main */
+#main{display:flex;flex:1;min-height:0}
+#map{flex:1;min-width:0}
+
+/* leaflet dark overrides */
+.leaflet-tile-pane{filter:saturate(0.8) brightness(0.75) hue-rotate(185deg)}
+.leaflet-control-zoom a{background:#1a2d42!important;color:#a8c0d6!important;border-color:rgba(255,255,255,0.12)!important}
+.leaflet-control-zoom a:hover{background:#253d55!important}
+.leaflet-control-attribution{background:rgba(10,20,35,0.8)!important;color:rgba(255,255,255,0.25)!important;font-size:9px!important}
+.leaflet-control-attribution a{color:rgba(100,160,220,0.5)!important}
+.leaflet-tooltip{background:#1a2d42;border:1px solid rgba(255,255,255,0.15);color:#c8d8e8;font-family:'Inter',sans-serif;font-size:11px;padding:3px 8px;border-radius:4px}
+.leaflet-popup-content-wrapper{background:#1a2d42;border:1px solid rgba(255,255,255,0.12);color:#e2eaf2;border-radius:8px;font-family:'Inter',sans-serif;font-size:12px}
+.leaflet-popup-tip{background:#1a2d42}
+.leaflet-popup-close-button{color:#a8c0d6!important}
+
+/* sidebar */
+#sidebar{width:280px;flex-shrink:0;background:#111e2e;border-left:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;overflow-y:auto}
+.fcard{padding:13px 14px;border-bottom:1px solid rgba(255,255,255,0.07);cursor:pointer;transition:background 0.15s;border-left:3px solid transparent}
+.fcard:hover{background:rgba(255,255,255,0.04)}
+#f1.on{background:rgba(56,130,255,0.09);border-left-color:#3882ff}
+#f2.on{background:rgba(245,158,11,0.08);border-left-color:#f59e0b}
+.ftop{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.fname{font-size:13px;font-weight:600;color:#c8d8e8}
+.fbadge{font-size:10px;font-family:'JetBrains Mono',monospace;padding:2px 7px;border-radius:10px}
+.bm{background:rgba(34,197,94,0.14);color:#22c55e;border:1px solid rgba(34,197,94,0.28)}
+.bd{background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.22)}
+.bu{background:rgba(148,163,184,0.1);color:#94a3b8;border:1px solid rgba(148,163,184,0.14)}
+.froute{font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:8px;line-height:1.5}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.fstat{background:rgba(255,255,255,0.04);border-radius:5px;padding:6px 8px}
+.fsl{font-size:9px;color:rgba(255,255,255,0.28);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px}
+.fsv{font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:500;color:#dde8f0}
+.pbar-wrap{margin-top:8px}
+.pbar-lbl{display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,0.32);margin-bottom:4px}
+.pbar{height:3px;background:rgba(255,255,255,0.07);border-radius:2px;overflow:hidden}
+.pfill{height:100%;border-radius:2px;transition:width 1s ease;background:linear-gradient(90deg,#3882ff,#60a5fa)}
+.pfill.am{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+
+#stops-wrap{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.07)}
+#stops-wrap h3,#info-wrap h3{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.25);margin-bottom:9px}
+.srow{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.srow:last-child{border:none}
+.sdot{width:8px;height:8px;border-radius:50%;border:2px solid #3882ff;background:#111e2e;flex-shrink:0}
+.sdot.am{border-color:#f59e0b}
+.sdot.here-b{background:#3882ff;box-shadow:0 0 0 3px rgba(56,130,255,0.22)}
+.sdot.here-a{background:#f59e0b;border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,0.22)}
+.sname{font-size:11px;color:rgba(255,255,255,0.5)}
+.sname.here{color:#fff;font-weight:500}
+.shere{font-size:9px;color:#22c55e;margin-left:auto;flex-shrink:0}
+
+#info-wrap{padding:12px 14px;flex:1}
+.irow{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px}
+.irow:last-child{border:none}
+.ik{color:rgba(255,255,255,0.35)}
+.iv{color:#c8d8e8;font-family:'JetBrains Mono',monospace;font-size:10px}
+
+#statusbar{padding:8px 14px;font-size:10px;color:rgba(255,255,255,0.2);line-height:1.6;border-top:1px solid rgba(255,255,255,0.06);background:#0a1520;flex-shrink:0}
+#statusbar a{color:rgba(100,160,255,0.5);text-decoration:none}
+#apistat{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,0.3);margin-bottom:1px}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- HEADER -->
+<div id="hdr">
+  <div class="brand">
+    <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="6" fill="#1a3a5c"/>
+      <path d="M4 18 Q14 13 24 18" stroke="#3882ff" stroke-width="1.5" fill="none"/>
+      <rect x="8" y="10" width="12" height="6" rx="1.5" fill="#3882ff" opacity="0.85"/>
+      <rect x="11" y="7" width="4" height="4" rx="0.5" fill="#60a5fa" opacity="0.7"/>
+      <rect x="4" y="18" width="20" height="3" rx="1" fill="#3882ff" opacity="0.35"/>
+    </svg>
+    <div><h1>Fergetracker</h1><p>Tjøtta · Forvik · Helgeland</p></div>
+  </div>
+  <div id="badge">
+    <span><span class="dot" id="livdot"></span>BarentsWatch AIS</span>
+    <span id="lastupd">kobler til...</span>
+  </div>
+</div>
+
+<!-- CAMERA BAR -->
+<div id="cambar">
+  <button class="ctab" id="ctab-both"   onclick="camToggle('both')">📷 Begge kaier</button>
+  <button class="ctab" id="ctab-tjotta" onclick="camToggle('tjotta')">📷 Tjøtta</button>
+  <button class="ctab" id="ctab-forvik" onclick="camToggle('forvik')">📷 Forvik</button>
+  <button class="ctab x"                onclick="camToggle('close')">✕</button>
+</div>
+
+<!-- CAMERA PANEL -->
+<div id="campanel">
+  <div class="cgrid" id="cgrid"></div>
+</div>
+
+<!-- MAP + SIDEBAR -->
+<div id="main">
+  <div id="map"></div>
+  <div id="sidebar">
+
+    <div class="fcard on" id="f1" onclick="selFerry(0)">
+      <div class="ftop"><span class="fname">MF Hornstind</span><span class="fbadge bu" id="b1">—</span></div>
+      <div class="froute">Tjøtta ↔ Forvik · direkterute</div>
+      <div class="fgrid">
+        <div class="fstat"><div class="fsl">Fart</div><div class="fsv" id="spd1">—</div></div>
+        <div class="fstat"><div class="fsl">Kurs</div><div class="fsv" id="hdg1">—</div></div>
+        <div class="fstat"><div class="fsl">Breddegrad</div><div class="fsv" id="pos1">—</div></div>
+        <div class="fstat"><div class="fsl">AIS-alder</div><div class="fsv" id="age1">—</div></div>
+      </div>
+      <div class="pbar-wrap" id="pw1" style="display:none">
+        <div class="pbar-lbl"><span id="pfrom1">Tjøtta</span><span id="ppct1"></span><span id="pto1">Forvik</span></div>
+        <div class="pbar"><div class="pfill" id="pf1" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="fcard" id="f2" onclick="selFerry(1)">
+      <div class="ftop"><span class="fname" style="color:#f59e0b">MF Sigrid</span><span class="fbadge bu" id="b2">—</span></div>
+      <div class="froute">Tjøtta → Mindland → Tro → Stokkasjøen → Vågsodden → Forvik</div>
+      <div class="fgrid">
+        <div class="fstat"><div class="fsl">Fart</div><div class="fsv" id="spd2">—</div></div>
+        <div class="fstat"><div class="fsl">Kurs</div><div class="fsv" id="hdg2">—</div></div>
+        <div class="fstat"><div class="fsl">Breddegrad</div><div class="fsv" id="pos2">—</div></div>
+        <div class="fstat"><div class="fsl">AIS-alder</div><div class="fsv" id="age2">—</div></div>
+      </div>
+      <div class="pbar-wrap" id="pw2" style="display:none">
+        <div class="pbar-lbl"><span id="pfrom2">Tjøtta</span><span id="ppct2"></span><span id="pto2">Forvik</span></div>
+        <div class="pbar"><div class="pfill am" id="pf2" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div id="stops-wrap"><h3>Stoppesteder</h3><div id="stopslist"></div></div>
+    <div id="info-wrap"><h3>Fartøyinfo</h3><div id="infolist"></div></div>
+    <div id="statusbar">
+      <div id="apistat">Starter...</div>
+      <div>AIS: <a href="https://barentswatch.no" target="_blank">BarentsWatch</a> · Kamera: <a href="https://vegvesen.no" target="_blank">Vegvesen</a></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Credentials ─────────────────────────────────────────────────────────
+var BW_ID  = 'kentrobinhagen@gmail.com:ferja';
+var BW_SEC = 'TjottaFerja2026!kbh';
+var TOK_URL = 'https://id.barentswatch.no/connect/token';
+var AIS_URL = 'https://live.ais.barentswatch.no/v1/latest/combined';
+
+// ── CORRECT coordinates (verified) ───────────────────────────────────────
+// Tjøtta ferjekai:  65.8318°N, 12.4267°E  (southern tip of Tjøtta island, on water)
+// Forvik ferjekai:  65.7608°N, 12.4103°E  (Vevelstad municipality, on fjord)
+// Mindland:         65.7919°N, 12.3697°E
+// Tro:              65.7755°N, 12.3469°E
+// Stokkasjøen:      65.7641°N, 12.3295°E
+// Vågsodden:        65.7619°N, 12.3864°E
+
+var FERRIES = [
+  {
+    name:'MF Hornstind', mmsi:257147000, color:'#3882ff', amber:false,
+    stops:[
+      {name:'Tjøtta', lat:65.8318, lon:12.4267},
+      {name:'Forvik', lat:65.7608, lon:12.4103}
+    ],
+    info:{'Operatør':'Torghatten Nord','IMO':'9796987','Byggeår':'2017','Lengde':'70 m','Kapasitet':'60 biler / 249 pass.','Motor':'Hybrid diesel/batteri'}
+  },
+  {
+    name:'MF Sigrid', mmsi:257243500, color:'#f59e0b', amber:true,
+    stops:[
+      {name:'Tjøtta',      lat:65.8318, lon:12.4267},
+      {name:'Mindland',    lat:65.7919, lon:12.3697},
+      {name:'Tro',         lat:65.7755, lon:12.3469},
+      {name:'Stokkasjøen', lat:65.7641, lon:12.3295},
+      {name:'Vågsodden',   lat:65.7619, lon:12.3864},
+      {name:'Forvik',      lat:65.7608, lon:12.4103}
+    ],
+    info:{'Operatør':'Torghatten Nord','IMO':'9030369','Byggeår':'1993','Rute':'Lokalrute','Stoppesteder':'6'}
+  }
+];
+
+var CAMS = {
+  tjotta:{ label:'Tjøtta ferjekai', id:'3001071_1', page:'https://www.vegvesen.no/trafikk/vaerveikamera/3001071' },
+  forvik:{ label:'Forvik ferjekai', id:'3001062_1', page:'https://www.vegvesen.no/trafikk/vaerveikamera/3001062' }
+};
+
+var map, selIdx=0, vdata=[null,null], mkrs=[null,null];
+var token=null, tokExp=0, camMode='close';
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+function hav(a1,o1,a2,o2){
+  var R=6371,da=(a2-a1)*Math.PI/180,dо=(o2-o1)*Math.PI/180;
+  var a=Math.sin(da/2)*Math.sin(da/2)+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(dо/2)*Math.sin(dо/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function ago(ms){
+  var s=Math.round((Date.now()-ms)/1000);
+  if(s<5) return 'nå'; if(s<60) return s+'s'; if(s<3600) return Math.round(s/60)+'min';
+  return Math.round(s/3600)+'t';
+}
+function stat(msg){document.getElementById('apistat').textContent=msg;}
+function g(id){return document.getElementById(id);}
+
+// ── Camera ───────────────────────────────────────────────────────────────
+function camSrc(id){return 'https://kamera.atlas.vegvesen.no/api/images/'+id+'?t='+Date.now();}
+
+function camToggle(mode){
+  if(mode==='close'||mode===camMode){
+    camMode='close';
+    g('campanel').classList.remove('open');
+    ['both','tjotta','forvik'].forEach(function(k){var e=g('ctab-'+k);if(e)e.classList.remove('on');});
+    return;
+  }
+  camMode=mode;
+  g('campanel').classList.add('open');
+  ['both','tjotta','forvik'].forEach(function(k){var e=g('ctab-'+k);if(e)e.classList.toggle('on',k===mode);});
+  buildCams();
+}
+
+function buildCams(){
+  var keys=camMode==='both'?['tjotta','forvik']:[camMode];
+  var gr=g('cgrid');
+  gr.style.gridTemplateColumns=keys.length===2?'1fr 1fr':'1fr';
+  gr.innerHTML=keys.map(function(k){
+    var c=CAMS[k],src=camSrc(c.id);
+    return '<div class="cbox">'
+      +'<div class="cloading">Laster bilde...</div>'
+      +'<img src="'+src+'" alt="'+c.label+'" onload="this.classList.add(\'ok\');this.previousElementSibling.style.display=\'none\'" onerror="this.previousElementSibling.textContent=\'Ikke tilgjengelig\'">'
+      +'<div class="clabel">'+c.label+'</div>'
+      +'<div class="cbtnrow">'
+      +'<button class="cbtn" onclick="refreshCam(\''+k+'\')">↺</button>'
+      +'<a class="cbtn" href="'+c.page+'" target="_blank">↗</a>'
+      +'</div></div>';
+  }).join('');
+}
+
+function refreshCam(k){
+  var c=CAMS[k];
+  document.querySelectorAll('.cbox img').forEach(function(img){
+    if(img.alt===c.label){img.classList.remove('ok');img.src=camSrc(c.id);}
+  });
+}
+setInterval(function(){if(camMode!=='close')buildCams();},120000);
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+async function getToken(){
+  if(token&&Date.now()<tokExp-30000) return token;
+  stat('Henter token...');
+  var r=await fetch(TOK_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'client_id='+encodeURIComponent(BW_ID)+'&client_secret='+encodeURIComponent(BW_SEC)+'&grant_type=client_credentials&scope=ais'
+  });
+  if(!r.ok){var t=await r.text();throw new Error('Token '+r.status+': '+t.slice(0,60));}
+  var d=await r.json();
+  if(!d.access_token) throw new Error('Ingen token');
+  token=d.access_token;
+  tokExp=Date.now()+(d.expires_in||3600)*1000;
+  return token;
+}
+
+// ── AIS fetch — POST with mmsi filter ─────────────────────────────────────
+async function fetchOne(mmsi,tok){
+  var r=await fetch(AIS_URL,{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+    body:JSON.stringify({mmsi:mmsi})
+  });
+  if(!r.ok) throw new Error('AIS '+r.status);
+  var text=await r.text();
+  if(!text.trim()) return null;
+  try{
+    var p=JSON.parse(text);
+    if(Array.isArray(p)) return p[0]||null;
+    return p;
+  }catch(e){
+    // newline-delimited stream
+    var lines=text.trim().split('\n');
+    for(var i=0;i<lines.length;i++){
+      try{var o=JSON.parse(lines[i]);if(+o.mmsi===mmsi)return o;}catch(e2){}
+    }
+    return null;
+  }
+}
+
+async function refresh(){
+  try{
+    var tok=await getToken();
+    var found=0;
+    for(var i=0;i<FERRIES.length;i++){
+      try{
+        var v=await fetchOne(FERRIES[i].mmsi,tok);
+        if(v&&(v.latitude!=null||v.lat!=null)){
+          found++;
+          var d={
+            lat:+(v.latitude!=null?v.latitude:v.lat),
+            lon:+(v.longitude!=null?v.longitude:v.lon),
+            speed:+(v.speedOverGround!=null?v.speedOverGround:v.speed||0),
+            heading:+(v.courseOverGround!=null?v.courseOverGround:v.trueHeading||v.heading||0),
+            ts:v.msgtime?new Date(v.msgtime).getTime():Date.now(),
+            name:v.name||FERRIES[i].name
+          };
+          vdata[i]=d;
+          updateUI(i,d);
+        } else {
+          noData(i);
+        }
+      }catch(e2){console.warn('vessel '+i,e2);noData(i);}
+    }
+    var dot=g('livdot');
+    dot.className='dot'+(found>0?' ok':' err');
+    g('lastupd').textContent=new Date().toLocaleTimeString('no-NO');
+    stat(found>0?'Live · '+found+' fartøy funnet':'Koblet til · ingen posisjoner');
+  }catch(e){
+    g('livdot').className='dot err';
+    stat('Feil: '+e.message);
+    console.error(e);
+  }
+}
+
+function noData(i){
+  var b=g('b'+(i+1));b.textContent='Ingen data';b.className='fbadge bu';
+  ['spd','hdg','pos','age'].forEach(function(k){var el=g(k+(i+1));if(el)el.textContent='—';});
+}
+
+// ── Update ferry UI ───────────────────────────────────────────────────────
+function updateUI(i,d){
+  var f=FERRIES[i];
+  var mov=d.speed>0.3;
+
+  // move map marker
+  if(mkrs[i]){
+    mkrs[i].setLatLng([d.lat,d.lon]);
+    mkrs[i].setIcon(mkIcon(f,d.heading));
+    mkrs[i].setPopupContent(
+      '<b style="color:'+f.color+'">'+f.name+'</b><br>'
+      +'Fart: '+d.speed.toFixed(1)+' kn<br>'
+      +'Kurs: '+Math.round(d.heading)+'°<br>'
+      +'Pos: '+d.lat.toFixed(4)+'°N, '+d.lon.toFixed(4)+'°E<br>'
+      +'AIS: '+ago(d.ts)
+    );
+  }
+
+  var n=i+1;
+  var b=g('b'+n);
+  b.textContent=mov?d.speed.toFixed(1)+' kn':'Fortøyd';
+  b.className='fbadge '+(mov?'bm':'bd');
+  g('spd'+n).textContent=d.speed.toFixed(1)+' kn';
+  g('hdg'+n).textContent=Math.round(d.heading)+'°';
+  g('pos'+n).textContent=d.lat.toFixed(3)+'°N';
+  g('age'+n).textContent=ago(d.ts);
+
+  // progress bar
+  var s0=f.stops[0],sN=f.stops[f.stops.length-1];
+  var tot=hav(s0.lat,s0.lon,sN.lat,sN.lon);
+  var dS=hav(s0.lat,s0.lon,d.lat,d.lon),dE=hav(sN.lat,sN.lon,d.lat,d.lon);
+  var toEnd=dS<dE;
+  var pct=Math.min(100,Math.max(0,Math.round(dS/tot*100)));
+  if(!toEnd) pct=100-pct;
+  if(mov){
+    g('pw'+n).style.display='block';
+    g('pf'+n).style.width=pct+'%';
+    g('ppct'+n).textContent=pct+'%';
+    g('pfrom'+n).textContent=toEnd?s0.name:sN.name;
+    g('pto'+n).textContent  =toEnd?sN.name:s0.name;
+  }
+  if(i===selIdx) drawStops(i,d);
+}
+
+// ── Stop list ─────────────────────────────────────────────────────────────
+function drawStops(idx,d){
+  var f=FERRIES[idx];
+  var ni=-1;
+  if(d){var md=Infinity;f.stops.forEach(function(s,j){var x=hav(d.lat,d.lon,s.lat,s.lon);if(x<md){md=x;ni=j;}});}
+  g('stopslist').innerHTML=f.stops.map(function(s,j){
+    var here=j===ni;
+    var dc='sdot'+(f.amber?' am':'')+(here?' '+(f.amber?'here-a':'here-b'):'');
+    return '<div class="srow"><div class="'+dc+'"></div>'
+      +'<div class="sname'+(here?' here':'')+'">'+s.name+'</div>'
+      +(here&&d&&d.speed>0.3?'<span class="shere">← her nå</span>':'')
+      +'</div>';
+  }).join('');
+}
+
+function drawInfo(idx){
+  var f=FERRIES[idx];
+  g('infolist').innerHTML=Object.keys(f.info).map(function(k){
+    return '<div class="irow"><span class="ik">'+k+'</span><span class="iv">'+f.info[k]+'</span></div>';
+  }).join('');
+}
+
+function selFerry(idx){
+  selIdx=idx;
+  g('f1').classList.toggle('on',idx===0);
+  g('f2').classList.toggle('on',idx===1);
+  drawStops(idx,vdata[idx]);
+  drawInfo(idx);
+  if(mkrs[idx]) map.panTo(mkrs[idx].getLatLng(),{animate:true,duration:0.4});
+}
+
+// ── Vessel icon ───────────────────────────────────────────────────────────
+function mkIcon(f,heading){
+  var c=f.color,rot=+(heading||0);
+  return L.divIcon({
+    className:'',
+    html:'<div style="position:relative">'
+      +'<svg width="28" height="28" viewBox="0 0 30 30" style="transform:rotate('+rot+'deg);filter:drop-shadow(0 2px 5px rgba(0,0,0,0.65))">'
+      +'<polygon points="15,2 25,27 15,21 5,27" fill="'+c+'" opacity="0.95"/>'
+      +'<polygon points="15,2 25,27 15,21 5,27" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="0.8"/>'
+      +'</svg>'
+      +'<div style="position:absolute;top:30px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#0d1b2a;border:1.5px solid '+c+';border-radius:4px;padding:1px 6px;font-size:10px;font-family:Inter,sans-serif;font-weight:600;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.6)">'+f.name+'</div>'
+      +'</div>',
+    iconSize:[28,55], iconAnchor:[14,14]
+  });
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────
+function initMap(){
+  // Centre between Tjøtta (65.8318, 12.4267) and Forvik (65.7608, 12.4103)
+  // midpoint ≈ 65.796, 12.418 — zoom 12 shows the whole fjord nicely
+  map=L.map('map',{center:[65.796,12.418],zoom:12,zoomControl:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© <a href="https://openstreetmap.org">OpenStreetMap</a>',maxZoom:17,minZoom:8
+  }).addTo(map);
+
+  // Stop markers — dots only, no route lines
+  FERRIES.forEach(function(f,i){
+    f.stops.forEach(function(s){
+      L.circleMarker([s.lat,s.lon],{
+        radius:6,color:f.color,fillColor:'#0d1b2a',fillOpacity:1,weight:2.5
+      }).addTo(map).bindTooltip(s.name,{direction:'top',offset:[0,-4]});
+    });
+
+    // Ferry marker — starts at midpoint, moves to real AIS pos on first fetch
+    var mid=f.stops.reduce(function(a,s){return{lat:a.lat+s.lat/f.stops.length,lon:a.lon+s.lon/f.stops.length};},{lat:0,lon:0});
+    mkrs[i]=L.marker([mid.lat,mid.lon],{icon:mkIcon(f,0),zIndexOffset:1000})
+      .addTo(map).bindPopup('Henter AIS-posisjon...').on('click',function(){selFerry(i);});
+  });
+
+  drawStops(0,null);
+  drawInfo(0);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+function boot(){
+  if(typeof L==='undefined'){setTimeout(boot,100);return;}
+  initMap();
+  refresh();
+  setInterval(refresh,30000);
+}
+window.addEventListener('load',boot);
+</script>
+</body>
+</html>
